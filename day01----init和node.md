@@ -169,33 +169,75 @@ NewChain创建链，创建链需要传入coredb和txpool，找到protocol.NewCha
 	
 	
 		assets = asset.NewRegistry(walletDB, chain)
+初始化资产模块，查找asset.NewRegistry(), 在asset/asset.go 下面
+
+	func NewRegistry(db dbm.DB, chain *protocol.Chain) *Registry {
+		initNativeAsset()
+		return &Registry{
+			db:         db,
+			chain:      chain,
+			cache:      lru.New(maxAssetCache),
+			aliasCache: lru.New(maxAssetCache),
+		}
+	}
+
+可以看到调用了initNativeAsset，继续看initNativeAsset，在同文件下
+	
+	func initNativeAsset() {
+		signer := &signers.Signer{Type: "internal"}
+		alias := consensus.BTMAlias
+
+		definitionBytes, _ := serializeAssetDef(consensus.BTMDefinitionMap)
+		DefaultNativeAsset = &Asset{
+			Signer:            signer,
+			AssetID:           *consensus.BTMAssetID,
+			Alias:             &alias,
+			VMVersion:         1,
+			DefinitionMap:     consensus.BTMDefinitionMap,
+			RawDefinitionByte: definitionBytes,
+		}
+	}
+
+这个方法主要是生成默认资产btm，所以btm在walletdb里面，继续往下走
+
 		wallet, err = w.NewWallet(walletDB, accounts, assets, hsm, chain)
 		if err != nil {
 			log.WithField("error", err).Error("init NewWallet")
 		}
+		
+可以看到新生成了一个wallet模块，将walletdb，accounts，assets，chain模块都塞进去了，具体看一下NewWallet方法，在wallet/wallet.go下
+
+	//NewWallet return a new wallet instance
+	func NewWallet(walletDB db.DB, account *account.Manager, asset *asset.Registry, hsm *pseudohsm.HSM, chain *protocol.Chain) (*Wallet, error) {
+		w := &Wallet{
+			DB:         walletDB,
+			AccountMgr: account,
+			AssetReg:   asset,
+			chain:      chain,
+			Hsm:        hsm,
+			rescanCh:   make(chan struct{}, 1),
+		}
+
+		if err := w.loadWalletInfo(); err != nil {
+			return nil, err
+		}
+
+		go w.walletUpdater()
+
+		return w, nil
+	}
+可以看到初始化wallet，并且更新wallet，回到原来代码，继续往下走
 
 		// trigger rescan wallet
 		if config.Wallet.Rescan {
 			wallet.RescanBlocks()
 		}
 
+扫描block，如果有区块则载入，
+
+
 		// Clean up expired UTXO reservations periodically.
 		go accounts.ExpireReservations(ctx, expireReservationsPeriod)
 	}
-
-
 	
-
-	
-
-	
-
-
-			
-			
-			
-			
-			
-			
-			
-						
+最后清除过期的utxo，算是启动完毕。
